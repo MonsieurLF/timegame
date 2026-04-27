@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Le Jeu de l'Heure</title>
+    <style>
+        :root {
+            --primary: #2c3e50;
+            --accent: #3498db;
+            --success: #27ae60;
+            --error: #e74c3c;
+            --bg: #f0f3f5;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background-color: var(--bg);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+
+        .game-card {
+            background: white;
+            padding: 2.5rem;
+            border-radius: 24px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+            text-align: center;
+            width: 100%;
+            max-width: 450px;
+        }
+
+        h1 { color: var(--primary); font-size: 1.8rem; margin-top: 0; }
+
+        .progress-text {
+            color: #7f8c8d;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        #clock-svg {
+            width: 280px;
+            height: 280px;
+            margin: 10px 0 25px 0;
+        }
+
+        .options-container {
+            display: grid;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        button.option-btn {
+            padding: 14px;
+            font-size: 1.05rem;
+            border: 2px solid #edf2f7;
+            border-radius: 12px;
+            background: white;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-weight: 500;
+        }
+
+        button.option-btn:hover:not(:disabled) {
+            border-color: var(--accent);
+            background: #f1f9ff;
+        }
+
+        button.correct { background-color: var(--success) !important; color: white; border-color: var(--success); }
+        button.wrong { background-color: var(--error) !important; color: white; border-color: var(--error); }
+
+        #next-btn, #restart-btn {
+            background: var(--primary);
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 50px;
+            font-size: 1rem;
+            cursor: pointer;
+            display: none;
+            margin: 0 auto;
+        }
+
+        #next-btn:hover { background: #34495e; }
+
+        .results-screen { display: none; }
+        .results-screen h2 { font-size: 3rem; color: var(--accent); margin: 0.5rem 0; }
+        
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+<div class="game-card" id="game-card">
+    <div id="quiz-ui">
+        <div class="progress-text">Question <span id="current-count">1</span> / 10</div>
+        <h1>Quelle heure est-il ?</h1>
+        
+        <svg id="clock-svg" viewBox="0 0 100 100">
+            <circle cx="50" cy="50" r="48" fill="white" stroke="#2c3e50" stroke-width="2"/>
+            <circle cx="50" cy="50" r="1.5" fill="#2c3e50"/>
+            
+            <g id="clock-numbers" font-size="5" text-anchor="middle" font-weight="bold" fill="#2c3e50"></g>
+
+            <line id="hour-hand" x1="50" y1="50" x2="50" y2="28" stroke="#2c3e50" stroke-width="3" stroke-linecap="round"/>
+            <line id="minute-hand" x1="50" y1="50" x2="50" y2="15" stroke="#3498db" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+
+        <div class="options-container" id="options"></div>
+        <button id="next-btn">Question suivante →</button>
+    </div>
+
+    <div id="results-ui" class="results-screen">
+        <h1>Terminé !</h1>
+        <p>Ton score final est de :</p>
+        <h2 id="final-score">0/10</h2>
+        <p id="score-comment"></p>
+        <button id="restart-btn" style="display: block;">Rejouer</button>
+    </div>
+</div>
+
+<script>
+    const hourHand = document.getElementById('hour-hand');
+    const minuteHand = document.getElementById('minute-hand');
+    const optionsContainer = document.getElementById('options');
+    const nextBtn = document.getElementById('next-btn');
+    const restartBtn = document.getElementById('restart-btn');
+    const clockNumbersGroup = document.getElementById('clock-numbers');
+    
+    let score = 0;
+    let attempts = 0;
+    let currentCorrectTime = "";
+
+    const numToFrench = {
+        0: "minuit", 1: "une", 2: "deux", 3: "trois", 4: "quatre", 5: "cinq",
+        6: "six", 7: "sept", 8: "huit", 9: "neuf", 10: "dix", 11: "onze", 12: "midi"
+    };
+
+    // Initialization: Draw numbers 1-12
+    function drawClockNumbers() {
+        for (let i = 1; i <= 12; i++) {
+            const angle = (i * 30 - 90) * (Math.PI / 180);
+            const x = 50 + 38 * Math.cos(angle);
+            const y = 50 + 38 * Math.sin(angle) + 2; // +2 for vertical alignment
+            const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+            text.setAttribute("x", x);
+            text.setAttribute("y", y);
+            text.textContent = i;
+            clockNumbersGroup.appendChild(text);
+        }
+    }
+
+    function getFrenchTime(h, m) {
+        if (h === 12 && m === 0) return "midi";
+        if (h === 0 && m === 0) return "minuit";
+
+        let hDisplay = h;
+        // Logic for 'moins le quart' - we talk about the next hour
+        if (m === 45) hDisplay = (h + 1) % 12;
+        
+        let hStr = (hDisplay === 0 || hDisplay === 12) ? numToFrench[hDisplay] : numToFrench[hDisplay] + (hDisplay === 1 ? " heure" : " heures");
+        
+        if (m === 0) return hStr;
+        if (m === 15) return hStr + " et quart";
+        if (m === 30) return hStr + " et demie";
+        if (m === 45) return hStr + " moins le quart";
+        return hStr + " " + m;
+    }
+
+    function generateQuestion() {
+        attempts++;
+        document.getElementById('current-count').textContent = attempts;
+        nextBtn.style.display = "none";
+        optionsContainer.innerHTML = "";
+        
+        const minutesOptions = [0, 15, 30, 45];
+        const h = Math.floor(Math.random() * 12);
+        const m = minutesOptions[Math.floor(Math.random() * minutesOptions.length)];
+
+        updateClockHands(h, m);
+        currentCorrectTime = getFrenchTime(h, m);
+
+        // Pedagogy: Create tricky distractors
+        let distractors = new Set();
+        distractors.add(getFrenchTime(h, m === 15 ? 30 : 15)); // Wrong fraction
+        distractors.add(getFrenchTime((h + 1) % 12, m));       // Wrong hour
+
+        let allOptions = Array.from(distractors);
+        allOptions.push(currentCorrectTime);
+        allOptions.sort(() => Math.random() - 0.5);
+
+        allOptions.forEach(opt => {
+            const btn = document.createElement('button');
+            btn.className = "option-btn";
+            btn.textContent = opt;
+            btn.onclick = () => checkAnswer(opt, btn);
+            optionsContainer.appendChild(btn);
+        });
+    }
+
+    function updateClockHands(h, m) {
+        const mDeg = m * 6;
+        const hDeg = (h * 30) + (m * 0.5);
+        hourHand.setAttribute('transform', `rotate(${hDeg} 50 50)`);
+        minuteHand.setAttribute('transform', `rotate(${mDeg} 50 50)`);
+    }
+
+    function checkAnswer(selected, btn) {
+        const buttons = optionsContainer.querySelectorAll('button');
+        buttons.forEach(b => b.disabled = true);
+
+        if (selected === currentCorrectTime) {
+            btn.classList.add('correct');
+            score++;
+        } else {
+            btn.classList.add('wrong');
+            buttons.forEach(b => {
+                if(b.textContent === currentCorrectTime) b.classList.add('correct');
+            });
+        }
+        nextBtn.style.display = "block";
+    }
+
+    nextBtn.onclick = () => {
+        if (attempts < 10) {
+            generateQuestion();
+        } else {
+            showResults();
+        }
+    };
+
+    function showResults() {
+        document.getElementById('quiz-ui').classList.add('hidden');
+        const resultsUi = document.getElementById('results-ui');
+        resultsUi.style.display = "block";
+        document.getElementById('final-score').textContent = `${score} / 10`;
+        
+        let comment = "Continue à t'entraîner !";
+        if (score === 10) comment = "Parfait ! Tu es un expert !";
+        else if (score >= 7) comment = "Très bien ! Presque parfait.";
+        document.getElementById('score-comment').textContent = comment;
+    }
+
+    restartBtn.onclick = () => {
+        score = 0;
+        attempts = 0;
+        document.getElementById('quiz-ui').classList.remove('hidden');
+        document.getElementById('results-ui').style.display = "none";
+        generateQuestion();
+    };
+
+    drawClockNumbers();
+    generateQuestion();
+</script>
+
+</body>
+</html>
